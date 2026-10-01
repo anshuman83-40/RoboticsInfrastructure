@@ -4,6 +4,7 @@
 Drops a 1.5 kg box (drone stand-in) onto the car roof in a Visual Lander world
 and checks whether it rests on the car and is carried along, or falls through.
 """
+
 import argparse
 import math
 import re
@@ -31,16 +32,21 @@ POSE_RE = re.compile(r"- Pose \[ XYZ \(m\) \] \[ RPY \(rad\) \]:\s*\[([^\]]+)\]"
 
 
 def model_xyz(name):
-    out = subprocess.run(["gz", "model", "-m", name, "-p"],
-                         capture_output=True, text=True, timeout=30).stdout
+    out = subprocess.run(
+        ["gz", "model", "-m", name, "-p"], capture_output=True, text=True, timeout=30
+    ).stdout
     m = POSE_RE.search(out)
     return [float(v) for v in m.group(1).split()] if m else None
 
 
 def sim_time():
     try:
-        out = subprocess.run(["gz", "topic", "-e", "-n", "1", "-t", "/stats"],
-                             capture_output=True, text=True, timeout=20).stdout
+        out = subprocess.run(
+            ["gz", "topic", "-e", "-n", "1", "-t", "/stats"],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        ).stdout
     except subprocess.TimeoutExpired:
         return None
     m = re.search(r"sim_time\s*\{\s*sec:\s*(\d+)(?:\s*nsec:\s*(\d+))?", out)
@@ -61,15 +67,22 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--world", required=True)
     p.add_argument("--label", required=True)
-    p.add_argument("--car", nargs=3, type=float, required=True,
-                   metavar=("X", "Y", "YAW"), help="car start pose")
+    p.add_argument(
+        "--car",
+        nargs=3,
+        type=float,
+        required=True,
+        metavar=("X", "Y", "YAW"),
+        help="car start pose",
+    )
     p.add_argument("--expect", choices=["carried", "fell"], required=True)
     a = p.parse_args()
 
     world = open(a.world, encoding="utf-8").read()
     # No sensors in these worlds without the drone; skip rendering entirely
-    world = re.sub(r'<plugin filename="gz-sim-sensors-system".*?</plugin>', "",
-                   world, flags=re.S)
+    world = re.sub(
+        r'<plugin filename="gz-sim-sensors-system".*?</plugin>', "", world, flags=re.S
+    )
     # Roof collision centre is at (0, 0.45) in the car link frame
     x, y, yaw = a.car
     rx = x - 0.45 * math.sin(yaw)
@@ -79,8 +92,11 @@ def main():
     open(test_world, "w", encoding="utf-8").write(world)
 
     log = open(f"/tmp/{a.label}.log", "w")
-    server = subprocess.Popen(["gz", "sim", "-s", "-r", "-v", "3", test_world],
-                              stdout=log, stderr=subprocess.STDOUT)
+    server = subprocess.Popen(
+        ["gz", "sim", "-s", "-r", "-v", "3", test_world],
+        stdout=log,
+        stderr=subprocess.STDOUT,
+    )
     try:
         t1 = wait_sim_time(5)
         box1, car1 = model_xyz("test_box"), model_xyz("car")
@@ -98,8 +114,11 @@ def main():
     print(f"[{a.label}] t={t2:.1f}s box={box2} car={car2}")
 
     logtext = open(f"/tmp/{a.label}.log").read()
-    problems = [l for l in logtext.splitlines()
-                if "WaypointFollower" in l or "Failed to load system plugin" in l]
+    problems = [
+        l
+        for l in logtext.splitlines()
+        if "WaypointFollower" in l or "Failed to load system plugin" in l
+    ]
     for l in problems:
         print(f"[{a.label}] LOG: {l}")
 
@@ -115,8 +134,10 @@ def main():
         else:
             car_move = math.dist(car1[:2], car2[:2])
             box_move = math.dist(box1[:2], box2[:2])
-            print(f"[{a.label}] car moved {car_move:.2f} m, box moved "
-                  f"{box_move:.2f} m, box z {box1[2]:.2f} -> {box2[2]:.2f}")
+            print(
+                f"[{a.label}] car moved {car_move:.2f} m, box moved "
+                f"{box_move:.2f} m, box z {box1[2]:.2f} -> {box2[2]:.2f}"
+            )
             if car_move < 5.0:
                 failures.append(f"car barely moved ({car_move:.2f} m)")
             if min(box1[2], box2[2]) < 1.9:
