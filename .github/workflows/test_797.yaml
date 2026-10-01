@@ -1,0 +1,66 @@
+name: Test 797 (Visual lander car collision)
+
+on:
+  push:
+    branches: [ci/797-test]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install ROS 2 Humble
+        run: |
+          sudo apt-get update && sudo apt-get install -y curl gnupg lsb-release
+          sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" | sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null
+          sudo apt-get update
+          sudo apt-get install -y ros-humble-ros-base python3-colcon-common-extensions \
+            ros-humble-urdf ros-humble-xacro ros-humble-ament-cmake-ros \
+            ros-humble-pluginlib ros-humble-sensor-msgs ros-humble-geometry-msgs
+
+      - uses: gazebo-tooling/setup-gazebo@v0.3.0
+        with:
+          required-gazebo-distributions: harmonic
+
+      - name: Install Gazebo Harmonic dev packages
+        run: |
+          sudo apt-get install -y libgz-sim8-dev libgz-plugin2-dev libgz-math7-dev
+          gz sim --versions
+
+      - name: Build custom_robots
+        run: |
+          source /opt/ros/humble/setup.bash
+          colcon build --base-paths CustomRobots --packages-select custom_robots \
+            --event-handlers console_direct+ --cmake-args -DBUILD_TESTING=OFF
+          ls -l install/custom_robots/lib
+
+      - name: "After: visual_lander.world"
+        run: |
+          source /opt/ros/humble/setup.bash && source install/setup.bash
+          python3 test797/check_landing.py --world Scenes/visual_lander.world \
+            --label after_visual_lander --car -12 0 1.5707 --expect carried
+
+      - name: "After: visual_lander_circuit.world"
+        run: |
+          source /opt/ros/humble/setup.bash && source install/setup.bash
+          python3 test797/check_landing.py --world Scenes/visual_lander_circuit.world \
+            --label after_visual_lander_circuit --car -13 -8 1.5707 --expect carried
+
+      - name: "Before: original actor world (humble-devel)"
+        run: |
+          source /opt/ros/humble/setup.bash && source install/setup.bash
+          git show origin/humble-devel:Scenes/visual_lander.world > /tmp/original.world || \
+            git show 6374643e:Scenes/visual_lander.world > /tmp/original.world
+          python3 test797/check_landing.py --world /tmp/original.world \
+            --label before_visual_lander --car -12 0 1.5707 --expect fell
+
+      - name: Server logs
+        if: always()
+        run: |
+          for f in /tmp/*.log; do echo "===== $f"; grep -iE "error|warn|waypoint|plugin" "$f" | head -40; done
