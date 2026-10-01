@@ -30,7 +30,7 @@ jobs:
 
       - name: Install Gazebo Harmonic dev packages
         run: |
-          sudo apt-get install -y libgz-sim8-dev libgz-plugin2-dev libgz-math7-dev
+          sudo apt-get install -y libgz-sim8-dev libgz-plugin2-dev libgz-math7-dev ros-humble-ros-gzharmonic
           gz sim --versions
 
       - name: Build custom_robots
@@ -39,6 +39,31 @@ jobs:
           colcon build --base-paths CustomRobots --packages-select custom_robots \
             --event-handlers console_direct+ --cmake-args -DBUILD_TESTING=OFF
           ls -l install/custom_robots/lib
+
+      - name: Take the plugin path from the Visual Lander launchers
+        run: |
+          source /opt/ros/humble/setup.bash && source install/setup.bash
+          python3 - <<'PY'
+          import importlib.util, os
+          from launch import LaunchContext
+          from launch.actions import AppendEnvironmentVariable
+          from launch.utilities import perform_substitutions
+          paths = set()
+          for f in ["Launchers/visual_lander.launch.py", "Launchers/visual_lander_circuit.launch.py"]:
+              spec = importlib.util.spec_from_file_location("l", f)
+              mod = importlib.util.module_from_spec(spec)
+              spec.loader.exec_module(mod)
+              acts = [a for a in mod.generate_launch_description().entities
+                      if isinstance(a, AppendEnvironmentVariable)
+                      and perform_substitutions(LaunchContext(), a.name) == "GZ_SIM_SYSTEM_PLUGIN_PATH"]
+              assert acts, f"{f}: no GZ_SIM_SYSTEM_PLUGIN_PATH"
+              path = perform_substitutions(LaunchContext(), acts[0].value)
+              assert os.path.isfile(os.path.join(path, "libwaypoint_follower_harmonic.so")), path
+              print(f, "->", path)
+              paths.add(path)
+          assert len(paths) == 1
+          open(os.environ["GITHUB_ENV"], "a").write("GZ_SIM_SYSTEM_PLUGIN_PATH=" + paths.pop() + chr(10))
+          PY
 
       - name: "After: visual_lander.world"
         run: |
